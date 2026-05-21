@@ -1,0 +1,11 @@
+# Normalize line endings: store as LF, checkout as CRLF on Windows
+* text=auto
+
+# Shell scripts must stay LF
+*.sh text eol=lf
+
+# Binaries
+*.ico binary
+*.icns binary
+*.png binary
+*.exe binary

@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <!-- Yellow rounded-square background, matching qBittorrent icon shape -->
+  <rect x="0" y="0" width="1024" height="1024" rx="230" ry="230" fill="#F5B800"/>
+  <!-- Subtle inner gradient for depth -->
+  <defs>
+    <radialGradient id="bg" cx="38%" cy="32%" r="70%">
+      <stop offset="0%" stop-color="#FFD040"/>
+      <stop offset="100%" stop-color="#E0A000"/>
+    </radialGradient>
+  </defs>
+  <rect x="0" y="0" width="1024" height="1024" rx="230" ry="230" fill="url(#bg)"/>
+  <!-- "qb" lettermark in white, bold, centered -->
+  <text
+    x="512"
+    y="640"
+    font-family="'Helvetica Neue', Helvetica, Arial, sans-serif"
+    font-weight="800"
+    font-size="520"
+    fill="white"
+    text-anchor="middle"
+    letter-spacing="-20"
+  >qb</text>
+</svg>

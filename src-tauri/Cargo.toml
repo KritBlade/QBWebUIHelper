@@ -1,0 +1,29 @@
+[package]
+name = "qbwebuihelper"
+version = "1.0.0"
+edition = "2021"
+
+[lib]
+name = "qbwebuihelper_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["tray-icon", "image-png"] }
+tauri-plugin-single-instance = "2"
+tauri-plugin-window-state = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+base64 = "0.22"
+url = "2"
+
+[target.'cfg(windows)'.dependencies]
+winreg = "0.52"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+# CFString wrappers for LaunchServices FFI (associations.rs)
+core-foundation = "0.9"
+# Receives magnet: URL events and file:// .torrent opens from macOS Apple Events
+tauri-plugin-deep-link = "2"

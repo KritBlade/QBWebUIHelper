@@ -1,0 +1,21 @@
+# Rust / Cargo build artifacts
+target/
+src-tauri/target/
+
+# Node / Tauri CLI
+node_modules/
+
+# Runtime files
+log.txt
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/settings.json
+.idea/
+
+# Generated Android/iOS icon assets (reproducible from icon.png via `npx tauri icon`)
+src-tauri/icons/android/
+src-tauri/icons/ios/

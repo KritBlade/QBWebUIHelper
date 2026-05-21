@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>QBWebUIHelper</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body {
+      height: 100%; background: #1e1e1e; color: #e0e0e0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    .screen {
+      display: none; flex-direction: column; align-items: center;
+      justify-content: center; height: 100%; gap: 14px; padding: 40px;
+      text-align: center;
+    }
+    .screen.active { display: flex; }
+
+    /* Spinner */
+    .spinner {
+      width: 40px; height: 40px; border: 3px solid #333;
+      border-top-color: #4a9eff; border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .icon { font-size: 40px; }
+    h2 { font-size: 18px; font-weight: 600; color: #e0e0e0; }
+    .url { font-size: 13px; color: #4a9eff; word-break: break-all; max-width: 500px; }
+    .hint { font-size: 13px; color: #888; max-width: 420px; line-height: 1.5; }
+
+    .btns { display: flex; gap: 10px; margin-top: 4px; }
+    .btn {
+      padding: 8px 18px; border: none; border-radius: 4px;
+      cursor: pointer; font-size: 13px;
+    }
+    .btn-p { background: #4a9eff; color: #fff; }
+    .btn-p:hover { background: #3a8eef; }
+    .btn-s { background: #3a3a3a; color: #e0e0e0; }
+    .btn-s:hover { background: #4a4a4a; }
+  </style>
+</head>
+<body>
+
+  <!-- Connecting -->
+  <div id="s-connecting" class="screen active">
+    <div class="spinner"></div>
+    <h2>Connecting…</h2>
+    <p id="connecting-url" class="url"></p>
+  </div>
+
+  <!-- Error -->
+  <div id="s-error" class="screen">
+    <div class="icon">⚠️</div>
+    <h2>Cannot connect to server</h2>
+    <p id="error-url" class="url"></p>
+    <p class="hint">Check your network connection, or update the server address in Settings.</p>
+    <div class="btns">
+      <button class="btn btn-p" onclick="retry()">Retry</button>
+      <button class="btn btn-s" onclick="openSettings()">Open Settings</button>
+    </div>
+  </div>
+
+  <!-- First run -->
+  <div id="s-firstrun" class="screen">
+    <div class="icon">👋</div>
+    <h2>Welcome to QBWebUIHelper</h2>
+    <p class="hint">Enter your qBittorrent WebUI address in Settings to get started.</p>
+    <div class="btns">
+      <button class="btn btn-p" onclick="openSettings()">Open Settings</button>
+    </div>
+  </div>
+
+  <script>
+    const invoke = window.__TAURI__.core.invoke;
+
+    function show(id) {
+      document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+      document.getElementById(id).classList.add('active');
+    }
+
+    function setConnecting(url) {
+      document.getElementById('connecting-url').textContent = url || '';
+      show('s-connecting');
+    }
+
+    function showError(url) {
+      document.getElementById('error-url').textContent = url || '';
+      show('s-error');
+    }
+
+    function showFirstRun() {
+      show('s-firstrun');
+    }
+
+    function retry() {
+      const url = document.getElementById('error-url').textContent;
+      setConnecting(url);
+      invoke('cmd_retry');
+    }
+
+    function openSettings() {
+      invoke('cmd_open_settings');
+    }
+  </script>
+</body>
+</html>
