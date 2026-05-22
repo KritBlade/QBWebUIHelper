@@ -115,7 +115,42 @@ fn init_logger() { /* spawn thread, open log.txt, loop on rx */ }
 fn log(msg: &str) { LOG_TX.get().map(|tx| tx.send(msg.into())); }
 ```
 
-Log file: `log.txt` next to the `.exe`. Written in UTC with human-readable timestamps.
+Written in UTC with human-readable timestamps. Log is wiped (not rotated) when it exceeds 5 MB.
+
+### File locations — platform reference
+
+| File | Windows | macOS |
+|------|---------|-------|
+| `log.txt` | `%LOCALAPPDATA%\com.kritblade.qbwebuihelper\log.txt` | `~/Library/Application Support/com.kritblade.qbwebuihelper/log.txt` |
+| `config.json` | `%LOCALAPPDATA%\com.kritblade.qbwebuihelper\config.json` | `~/Library/Application Support/com.kritblade.qbwebuihelper/config.json` |
+
+#### Tail the log live (macOS)
+
+```bash
+tail -f ~/Library/Application\ Support/com.kritblade.qbwebuihelper/log.txt
+```
+
+#### Tail the log live (Windows PowerShell)
+
+```powershell
+Get-Content "$env:LOCALAPPDATA\com.kritblade.qbwebuihelper\log.txt" -Wait -Tail 50
+```
+
+### Full reset — delete all app data
+
+Completely removes config, log, and cached window state. The next launch behaves as a first run (shows Settings automatically).
+
+**macOS:**
+```bash
+rm -rf ~/Library/Application\ Support/com.kritblade.qbwebuihelper/
+```
+
+**Windows (PowerShell):**
+```powershell
+Remove-Item "$env:LOCALAPPDATA\com.kritblade.qbwebuihelper" -Recurse -Force
+```
+
+> ⚠️ If you have file associations set as default on macOS, click **Restore Previous Default** in Settings *before* deleting the config — the backup of your previous handler (e.g. Transmission) lives in `config.json`. Deleting it first means you can no longer restore automatically.
 
 ---
 
@@ -241,11 +276,44 @@ A full reboot also clears the cache. This is a Windows shell issue — unrelated
 
 ---
 
-## 9. Platform Notes for macOS Port
+## 9. Platform Notes for macOS
 
 The connection landing page (`index.html`) and TCP check are platform-neutral Rust — no changes needed. The `win.navigate(url)` fix (§2) applies to WebKit on macOS identically. Window pre-creation (§1) is the same.
 
-macOS-specific work still needed:
-- File association registration via `LSSetDefaultHandlerForURLScheme` / `LSCopyDefaultHandlerForURLScheme`
-- The macOS "Set as Default" warning modal (see `plans/tauri-port-plan.md`)
-- Menu bar integration (macOS expects items under the app menu, not just the tray)
+### macOS LaunchServices — symbol names gotcha
+
+The correct CoreServices symbols for content-type (UTI) handler management are:
+
+```
+LSCopyDefaultRoleHandlerForContentType   ← note "Role" in the name
+LSSetDefaultRoleHandlerForContentType    ← note "Role" in the name
+```
+
+The URL-scheme variants are named differently (no "Role"):
+
+```
+LSCopyDefaultHandlerForURLScheme
+LSSetDefaultHandlerForURLScheme
+```
+
+Using the wrong names causes an `undefined symbol` linker error on macOS — magnet: links will work but `.torrent` will fail at link time.
+
+### macOS Info.plist requirements for file association claiming
+
+Three keys are required for `LSSetDefaultRoleHandlerForContentType` to accept the claim:
+
+1. **`CFBundleDocumentTypes`** must include an entry with `LSItemContentTypes: ["com.bittorrent.torrent"]`. Tauri's `fileAssociations` in `tauri.conf.json` generates `CFBundleTypeExtensions` but NOT `LSItemContentTypes`. Override via custom `src-tauri/Info.plist`.
+
+2. **`UTImportedTypeDeclarations`** — declares `com.bittorrent.torrent` to Launch Services. Without this, if no BitTorrent client (Transmission, etc.) is installed, the UTI is unknown and the LS call returns `kLSUnknownTypeErr (-10809)`. Add to custom `Info.plist`.
+
+3. **`NSLocalNetworkUsageDescription`** — macOS may block TCP connections to LAN IPs without this key in the bundle. Add to custom `Info.plist`.
+
+See `src-tauri/Info.plist` for the current complete definition of all three.
+
+### macOS global app menu
+
+On macOS, `WebviewWindowBuilder::menu()` does NOT replace the system app menu. Use `app.set_menu()` in `setup()` with a full menu structure (app submenu → About, Settings ⌘,, Services, Hide, Quit; plus Edit, View, Window submenus). See `build_mac_app_menu()` in `lib.rs`.
+
+### macOS association confirmation dialog
+
+When `LSSetDefaultRoleHandlerForContentType` is called and another app currently owns the type, macOS shows a system dialog asynchronously (e.g. "Do you want .torrent to open with QBWebUIHelper or keep using Free Download Manager?"). The LS call returns success **before** the user dismisses the dialog. Poll `cmd_is_registered` after calling `cmd_register` rather than checking status immediately — the settings UI does this with `pollUntilRegistered(15)` in `settings.html`.

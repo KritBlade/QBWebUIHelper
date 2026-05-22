@@ -35,6 +35,9 @@
       "nsis": {
         "installMode": "currentUser"
       }
+    },
+    "macOS": {
+      "infoPlist": "Info.plist"
     }
   },
   "plugins": {

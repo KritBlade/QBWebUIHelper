@@ -273,6 +273,40 @@ Windows is confirmed working. Fix these before starting the macOS port — they 
 
 ---
 
+## macOS Session Fixes (2026-05-22) — What Changed & What Needs Windows Backport
+
+### Fixes that apply to both platforms (already in the shared code)
+
+| Fix | File | Detail |
+|-----|------|--------|
+| **Settings auto-close on successful save** | `lib.rs` `cmd_save_url`, `settings.html` | `cmd_save_url` now returns `bool` (TCP check result). On success, the Rust side calls `w.hide()` on the settings window. On failure, the JS side shows an error message. Save button is disabled during the check. Cross-platform — no separate Windows work needed. |
+| **Set as Default / Register button greyed when already registered** | `settings.html` `refreshRegStatus()` | Added `btn-set-default.disabled = registered` for macOS branch. **Windows backport needed**: same line should be added for the `btn-register` button in the Windows branch (see §Windows backport below). |
+| **Backup overwrite guard** | `lib.rs` `platform_register` (macOS) | `cfg.mac_backup` is only written if `!cfg.mac_backup.has_any()` — prevents a second "Set as Default" click from overwriting the original handler backup with our own bundle ID. **Windows backport needed**: `platform_register` (Windows) has the same bug — it always overwrites `cfg.reg_backup`. |
+| **Backup self-reference filter** | `associations.rs` `mac::register()` | Before snapshotting the current handler as "previous", the code now filters out our own bundle ID. Prevents `mac_backup` from ever pointing to `com.kritblade.qbwebuihelper` itself. **Windows backport needed**: Windows `register()` should similarly skip writing backup entries whose existing value already points to our own ProgID/exe. |
+
+### macOS-only fixes (no Windows equivalent needed)
+
+| Fix | File | Detail |
+|-----|------|--------|
+| **Wrong LS symbol names** | `associations.rs` | `LSSetDefaultHandlerForContentType` / `LSCopyDefaultHandlerForContentType` do not exist. Correct names are `LSSetDefaultRoleHandlerForContentType` / `LSCopyDefaultRoleHandlerForContentType`. The URL-scheme variants (`LSSetDefaultHandlerForURLScheme`) are named differently — no "Role" — which is why magnet worked but torrent didn't. |
+| **Missing `LSItemContentTypes` in `CFBundleDocumentTypes`** | `src-tauri/Info.plist` | Tauri's `fileAssociations` generates `CFBundleTypeExtensions` but not `LSItemContentTypes`. Without this key, `LSSetDefaultRoleHandlerForContentType` rejects the claim (`kLSUnknownTypeErr`). Fixed via custom `Info.plist` that overrides `CFBundleDocumentTypes` to add `LSItemContentTypes: ["com.bittorrent.torrent"]`. |
+| **Missing `UTImportedTypeDeclarations`** | `src-tauri/Info.plist` | If Transmission (or another app that owns `com.bittorrent.torrent`) is not installed, the UTI is unknown to the system. Declaring it via `UTImportedTypeDeclarations` with extension/MIME tag tells Launch Services the UTI exists. |
+| **Missing `NSLocalNetworkUsageDescription`** | `src-tauri/Info.plist` | macOS may block TCP connections to LAN IPs without this key. Added to custom `Info.plist`. |
+| **Global app menu** | `lib.rs` `build_mac_app_menu()` | On macOS the per-window `.menu()` approach used for Windows doesn't replace the default app menu. Fixed by building a proper macOS menu (app submenu with About, Settings ⌘,, Services, Hide, Quit + Edit/View/Window submenus) and calling `app.set_menu()` globally. The Windows path still uses `WebviewWindowBuilder::menu()` unchanged. |
+| **`set_content_handler` error code** | `associations.rs` | Changed return type from `bool` to `Result<(), i32>` so the actual `OSStatus` code is surfaced in the error message (e.g. `torrent=err(-10809)` for unknown type). Helps diagnose future LS failures. |
+
+### Windows backport checklist
+
+These are bugs found during macOS testing that exist on Windows too. Fix on Windows before next release.
+
+| # | What to fix | Where | Detail |
+|---|------------|-------|--------|
+| 1 | **Register button disabled when already registered** | `settings.html` `refreshRegStatus()` | In the `if (currentPlatform === 'windows')` branch, add `document.getElementById('btn-register').disabled = registered;` after setting `reg-status-win`. |
+| 2 | **Backup overwrite guard** | `lib.rs` `platform_register` (Windows, lines ~368-378) | Wrap `cfg.reg_backup = backup;` in `if cfg.reg_backup.is_empty() { ... }`. Need to add `is_empty()` to `Vec<RegMutation>` check or use `.is_empty()` directly since it's a Vec. |
+| 3 | **Backup self-reference filter** | `associations.rs` `win::register()` | In the backup snapshot phase, check if the existing registry value already points to our own ProgID (`QBWebUIHelper.Torrent` / `QBWebUIHelper.Magnet`). If so, store `None` / empty string instead of writing it as the backup, so unregister doesn't restore to ourselves. |
+
+---
+
 ## Mac Handoff — Read This First on the Mac
 
 > **This section is written for a fresh AI session on macOS that has no history of this project.**

@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>NSLocalNetworkUsageDescription</key>
+  <string>QBWebUIHelper needs to connect to qBittorrent running on your local network.</string>
+
+  <!-- Declare the com.bittorrent.torrent UTI so Launch Services accepts it.
+       Without this, LSSetDefaultRoleHandlerForContentType returns kLSUnknownTypeErr
+       if no other app (e.g. Transmission) has already registered the UTI. -->
+  <key>UTImportedTypeDeclarations</key>
+  <array>
+    <dict>
+      <key>UTTypeIdentifier</key>
+      <string>com.bittorrent.torrent</string>
+      <key>UTTypeDescription</key>
+      <string>BitTorrent File</string>
+      <key>UTTypeConformsTo</key>
+      <array>
+        <string>public.data</string>
+        <string>public.content</string>
+      </array>
+      <key>UTTypeTagSpecification</key>
+      <dict>
+        <key>public.filename-extension</key>
+        <array>
+          <string>torrent</string>
+        </array>
+        <key>public.mime-type</key>
+        <string>application/x-bittorrent</string>
+      </dict>
+    </dict>
+  </array>
+
+  <!-- Override CFBundleDocumentTypes to include LSItemContentTypes (UTI).
+       LSSetDefaultRoleHandlerForContentType checks this to accept the claim. -->
+  <key>CFBundleDocumentTypes</key>
+  <array>
+    <dict>
+      <key>CFBundleTypeExtensions</key>
+      <array>
+        <string>torrent</string>
+      </array>
+      <key>CFBundleTypeName</key>
+      <string>Torrent File</string>
+      <key>CFBundleTypeRole</key>
+      <string>Viewer</string>
+      <key>LSHandlerRank</key>
+      <string>Default</string>
+      <key>LSItemContentTypes</key>
+      <array>
+        <string>com.bittorrent.torrent</string>
+      </array>
+    </dict>
+  </array>
+</dict>
+</plist>

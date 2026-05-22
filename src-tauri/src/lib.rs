@@ -378,9 +378,13 @@ fn platform_register(app: &tauri::AppHandle) -> Result<(), String> {
 
 #[cfg(target_os = "macos")]
 fn platform_register(app: &tauri::AppHandle) -> Result<(), String> {
-    let (backup, result) = associations::register();
+    let (new_backup, result) = associations::register();
     let mut cfg = config::load(app);
-    cfg.mac_backup = backup;
+    // Only preserve the backup on the first registration — subsequent clicks
+    // would otherwise snapshot our own bundle ID as the "previous" handler.
+    if !cfg.mac_backup.has_any() {
+        cfg.mac_backup = new_backup;
+    }
     config::save(app, &cfg);
     result
 }

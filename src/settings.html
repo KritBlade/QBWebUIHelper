@@ -185,6 +185,8 @@
           ? 'Status: <span class="status-on">Set as default</span>'
           : 'Status: <span class="status-off">Not set as default</span>';
 
+        document.getElementById('btn-set-default').disabled = registered;
+
         const hasBackup = await invoke('cmd_has_mac_backup');
         document.getElementById('btn-restore-default').style.display =
           hasBackup ? 'inline-block' : 'none';
@@ -282,12 +284,28 @@
       closeMacWarn();
       try {
         await invoke('cmd_register');
-        showMsg('reg-msg-mac', 'Set as default handler for magnet: and .torrent.', true);
+        // macOS may show a system dialog asking the user to confirm the association
+        // change. The LS call returns before the user dismisses it, so we poll
+        // until the status actually flips rather than reading it immediately.
+        showMsg('reg-msg-mac', 'If macOS shows a dialog, click "Use QBWebUIHelper" to confirm.', true);
+        await pollUntilRegistered(15);
       } catch (e) {
         showMsg('reg-msg-mac', 'Error: ' + e, false);
+        await refreshRegStatus();
       }
-      await refreshRegStatus();
     });
+
+    async function pollUntilRegistered(maxSeconds) {
+      for (let i = 0; i < maxSeconds; i++) {
+        await new Promise(r => setTimeout(r, 1000));
+        const registered = await invoke('cmd_is_registered');
+        await refreshRegStatus();
+        if (registered) {
+          showMsg('reg-msg-mac', 'Set as default handler for magnet: and .torrent.', true);
+          break;
+        }
+      }
+    }
 
     // ── macOS: Restore Previous Default ───────────────────────────
     document.getElementById('btn-restore-default').addEventListener('click', async () => {

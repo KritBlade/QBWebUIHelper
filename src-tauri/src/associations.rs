@@ -264,7 +264,7 @@ mod mac {
         Some(result.to_string())
     }
 
-    fn set_content_handler(uti: &str, bundle_id: &str) -> bool {
+    fn set_content_handler(uti: &str, bundle_id: &str) -> Result<(), i32> {
         let cf_uti = CFString::new(uti);
         let cf_bundle = CFString::new(bundle_id);
         let status = unsafe {
@@ -274,7 +274,7 @@ mod mac {
                 cf_bundle.as_concrete_TypeRef(),
             )
         };
-        status == 0
+        if status == 0 { Ok(()) } else { Err(status) }
     }
 
     pub fn is_registered() -> bool {
@@ -291,21 +291,27 @@ mod mac {
     /// this app. Returns (backup, result). Backup is always populated so the caller
     /// can persist it even if the write partially fails.
     pub fn register() -> (MacBackup, Result<(), String>) {
+        // Only snapshot a handler as "previous" if it belongs to someone else.
+        // If it's already us (or missing), store None so we don't create a
+        // circular restore that points back to QBWebUIHelper itself.
+        let filter = |h: Option<String>| -> Option<String> {
+            h.filter(|id| !id.eq_ignore_ascii_case(OUR_BUNDLE_ID))
+        };
         let backup = MacBackup {
-            prev_magnet_handler: get_url_handler("magnet"),
-            prev_torrent_handler: get_content_handler(TORRENT_UTI),
+            prev_magnet_handler: filter(get_url_handler("magnet")),
+            prev_torrent_handler: filter(get_content_handler(TORRENT_UTI)),
         };
 
         let magnet_ok = set_url_handler("magnet", OUR_BUNDLE_ID);
-        let torrent_ok = set_content_handler(TORRENT_UTI, OUR_BUNDLE_ID);
+        let torrent_result = set_content_handler(TORRENT_UTI, OUR_BUNDLE_ID);
 
-        let result = if magnet_ok && torrent_ok {
-            Ok(())
-        } else {
-            Err(format!(
+        let result = match (&magnet_ok, &torrent_result) {
+            (true, Ok(())) => Ok(()),
+            _ => Err(format!(
                 "Failed to set default handler(s): magnet={} torrent={}",
-                magnet_ok, torrent_ok
-            ))
+                magnet_ok,
+                torrent_result.as_ref().err().map(|e| format!("err({})", e)).unwrap_or_else(|| "ok".into())
+            )),
         };
 
         (backup, result)
