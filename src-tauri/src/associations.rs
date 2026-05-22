@@ -220,12 +220,12 @@ mod mac {
     extern "C" {
         fn LSSetDefaultHandlerForURLScheme(scheme: CFStringRef, bundle_id: CFStringRef) -> i32;
         fn LSCopyDefaultHandlerForURLScheme(scheme: CFStringRef) -> CFStringRef;
-        fn LSSetDefaultHandlerForContentType(
+        fn LSSetDefaultRoleHandlerForContentType(
             content_type: CFStringRef,
             role: u32,
             bundle_id: CFStringRef,
         ) -> i32;
-        fn LSCopyDefaultHandlerForContentType(
+        fn LSCopyDefaultRoleHandlerForContentType(
             content_type: CFStringRef,
             role: u32,
         ) -> CFStringRef;
@@ -256,7 +256,7 @@ mod mac {
 
     fn get_content_handler(uti: &str) -> Option<String> {
         let cf = CFString::new(uti);
-        let raw = unsafe { LSCopyDefaultHandlerForContentType(cf.as_concrete_TypeRef(), LS_ROLES_ALL) };
+        let raw = unsafe { LSCopyDefaultRoleHandlerForContentType(cf.as_concrete_TypeRef(), LS_ROLES_ALL) };
         if raw.is_null() {
             return None;
         }
@@ -268,7 +268,7 @@ mod mac {
         let cf_uti = CFString::new(uti);
         let cf_bundle = CFString::new(bundle_id);
         let status = unsafe {
-            LSSetDefaultHandlerForContentType(
+            LSSetDefaultRoleHandlerForContentType(
                 cf_uti.as_concrete_TypeRef(),
                 LS_ROLES_ALL,
                 cf_bundle.as_concrete_TypeRef(),

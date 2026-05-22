@@ -213,8 +213,14 @@
     document.getElementById('save-url').addEventListener('click', async () => {
       const url = document.getElementById('url').value.trim();
       if (!url) return;
-      await invoke('cmd_save_url', { url });
-      showMsg('url-msg', 'Saved! Navigating main window...', true);
+      const btn = document.getElementById('save-url');
+      btn.disabled = true;
+      const ok = await invoke('cmd_save_url', { url });
+      btn.disabled = false;
+      if (!ok) {
+        showMsg('url-msg', 'Saved, but cannot reach server. Check URL and try again.', false);
+      }
+      // On success, the settings window is hidden by the Rust side.
     });
 
     // ── Close-to-tray ──────────────────────────────────────────────

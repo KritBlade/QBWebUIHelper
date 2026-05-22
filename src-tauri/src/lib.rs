@@ -189,6 +189,67 @@ fn open_about(app: &tauri::AppHandle) {
     }
 }
 
+#[cfg(target_os = "macos")]
+fn build_mac_app_menu(app: &tauri::App) -> tauri::Result<tauri::menu::Menu<tauri::Wry>> {
+    use tauri::menu::{MenuBuilder, MenuItemBuilder, PredefinedMenuItem, SubmenuBuilder};
+
+    let about_item = MenuItemBuilder::with_id("menu_about", "About QBWebUIHelper").build(app)?;
+    let settings_item = MenuItemBuilder::with_id("menu_settings", "Settings…")
+        .accelerator("Cmd+,")
+        .build(app)?;
+    let sep1 = PredefinedMenuItem::separator(app)?;
+    let sep2 = PredefinedMenuItem::separator(app)?;
+    let sep3 = PredefinedMenuItem::separator(app)?;
+    let sep4 = PredefinedMenuItem::separator(app)?;
+    let services = PredefinedMenuItem::services(app, None)?;
+    let hide = PredefinedMenuItem::hide(app, None)?;
+    let hide_others = PredefinedMenuItem::hide_others(app, None)?;
+    let show_all = PredefinedMenuItem::show_all(app, None)?;
+    let quit = PredefinedMenuItem::quit(app, None)?;
+
+    let app_submenu = SubmenuBuilder::new(app, "QBWebUIHelper")
+        .items(&[
+            &about_item,
+            &sep1,
+            &settings_item,
+            &sep2,
+            &services,
+            &sep3,
+            &hide,
+            &hide_others,
+            &show_all,
+            &sep4,
+            &quit,
+        ])
+        .build()?;
+
+    let edit_undo = PredefinedMenuItem::undo(app, None)?;
+    let edit_redo = PredefinedMenuItem::redo(app, None)?;
+    let edit_sep = PredefinedMenuItem::separator(app)?;
+    let edit_cut = PredefinedMenuItem::cut(app, None)?;
+    let edit_copy = PredefinedMenuItem::copy(app, None)?;
+    let edit_paste = PredefinedMenuItem::paste(app, None)?;
+    let edit_select_all = PredefinedMenuItem::select_all(app, None)?;
+    let edit_submenu = SubmenuBuilder::new(app, "Edit")
+        .items(&[&edit_undo, &edit_redo, &edit_sep, &edit_cut, &edit_copy, &edit_paste, &edit_select_all])
+        .build()?;
+
+    let view_fullscreen = PredefinedMenuItem::fullscreen(app, None)?;
+    let view_submenu = SubmenuBuilder::new(app, "View")
+        .items(&[&view_fullscreen])
+        .build()?;
+
+    let win_minimize = PredefinedMenuItem::minimize(app, None)?;
+    let win_maximize = PredefinedMenuItem::maximize(app, None)?;
+    let win_submenu = SubmenuBuilder::new(app, "Window")
+        .items(&[&win_minimize, &win_maximize])
+        .build()?;
+
+    MenuBuilder::new(app)
+        .items(&[&app_submenu, &edit_submenu, &view_submenu, &win_submenu])
+        .build()
+}
+
 fn setup_tray(app: &tauri::App) -> tauri::Result<()> {
     use tauri::menu::{MenuBuilder, MenuItemBuilder, PredefinedMenuItem};
     use tauri::tray::TrayIconBuilder;
@@ -255,13 +316,20 @@ fn cmd_get_config(app: tauri::AppHandle) -> config::Config {
 }
 
 #[tauri::command]
-fn cmd_save_url(app: tauri::AppHandle, url: String) {
+fn cmd_save_url(app: tauri::AppHandle, url: String) -> bool {
     let mut cfg = config::load(&app);
     cfg.webui_url = url.clone();
     config::save(&app, &cfg);
+    let ok = check_tcp_connection(&url);
     if let Some(w) = app.get_webview_window("main") {
         trigger_connect(w, url, None);
     }
+    if ok {
+        if let Some(w) = app.get_webview_window("settings") {
+            let _ = w.hide();
+        }
+    }
+    ok
 }
 
 #[tauri::command]
@@ -437,8 +505,21 @@ pub fn run() {
                 });
             }
 
-            // Build the window menu: Settings > Settings… | About
-            let menu = {
+            // Windows: window-level title-bar menu (Settings > Settings… | About).
+            // macOS:   global app menu with About/Settings inside the app submenu.
+            #[cfg(target_os = "macos")]
+            {
+                let menu = build_mac_app_menu(app)?;
+                app.set_menu(menu)?;
+                app.on_menu_event(|app, event| match event.id().as_ref() {
+                    "menu_settings" => open_settings(app),
+                    "menu_about"    => open_about(app),
+                    _ => {}
+                });
+            }
+
+            #[cfg(target_os = "windows")]
+            let win_menu = {
                 use tauri::menu::{MenuBuilder, MenuItemBuilder, PredefinedMenuItem, SubmenuBuilder};
                 let settings_item = MenuItemBuilder::with_id("menu_settings", "Settings...").build(app)?;
                 let about_item    = MenuItemBuilder::with_id("menu_about",    "About").build(app)?;
@@ -449,7 +530,7 @@ pub fn run() {
                 MenuBuilder::new(app).items(&[&submenu]).build()?
             };
 
-            let win = tauri::WebviewWindowBuilder::new(
+            let win_builder = tauri::WebviewWindowBuilder::new(
                 app,
                 "main",
                 tauri::WebviewUrl::App("index.html".into()),
@@ -457,10 +538,14 @@ pub fn run() {
             .title("QBWebUIHelper")
             .inner_size(1600.0, 900.0)
             .initialization_script(helper_js())
-            .menu(menu)
-            .visible(false)
-            .build()?;
+            .visible(false);
 
+            #[cfg(target_os = "windows")]
+            let win_builder = win_builder.menu(win_menu);
+
+            let win = win_builder.build()?;
+
+            #[cfg(target_os = "windows")]
             win.on_menu_event(|win, event| match event.id().as_ref() {
                 "menu_settings" => open_settings(win.app_handle()),
                 "menu_about"    => open_about(win.app_handle()),
