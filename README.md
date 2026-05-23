@@ -88,3 +88,7 @@ The release binary lands in `src-tauri/target/release/`.
 ## License
 
 AGPL-3.0
+
+---
+
+[![Buy me a coffee](https://img.buymeacoffee.com/button-api/?text=Buy+me+a+coffee&emoji=&slug=kritblade&button_colour=5F7FFF&font_colour=ffffff&font_family=Poppins&outline_colour=000000&coffee_colour=FFDD00)](https://www.buymeacoffee.com/kritblade)
