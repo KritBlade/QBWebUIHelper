@@ -16,9 +16,9 @@ Works on **Windows and macOS**.
 
 ## Why this instead of qBittorrent's own option?
 
-qBittorrent does have a setting to handle magnet links, but it expects the full qBittorrent desktop app to be installed locally. If you're using the web interface to talk to a remote instance (on a NAS, a server, another machine on your network), that option doesn't help you.
+qBittorrent's web interface does have a "Register to handle magnet links" option, but it only works if your WebUI is running over HTTPS — which most home and LAN setups aren't. And even if you get that working, there's no equivalent option for `.torrent` files at all, because browsers simply can't register a file type association on behalf of a website.
 
-This app bridges that gap. It doesn't care where your qBittorrent is running — just point it at the URL, and it handles the rest.
+QBWebUIHelper sidesteps both limitations entirely. It registers at the OS level, so HTTPS isn't a requirement and `.torrent` files work just as well as magnet links.
 
 ---
 
@@ -46,8 +46,8 @@ No admin password needed. No digging through system settings. If you ever want t
 
 ## Setup
 
-1. Download the installer for your platform from the [Releases](../../releases) page
-2. Install and launch the app
+1. Download the .zip file for your platform from the [Releases](../../releases) page
+2. Extract the zip file to whereever you want to place the binary and launch the app
 3. On first run, enter your qBittorrent WebUI URL (e.g. `http://192.168.1.100:8080`)
 4. Go to Settings → click **Register** (Windows) or **Set as Default** (macOS)
 5. Follow the short on-screen prompt to confirm in your system's default apps settings
