@@ -1,0 +1,10 @@
+{
+  "identifier": "default",
+  "description": "Default capability for all app windows",
+  "windows": ["main", "settings", "about"],
+  "permissions": [
+    "core:default",
+    "window-state:allow-restore-state",
+    "window-state:allow-save-window-state"
+  ]
+}

@@ -1,0 +1,123 @@
+# Deluge Registry Reference — Filtered to Relevant Entries Only
+#
+# Original dump trimmed: removed firewall rules, Stardock/WinSTEP/sphinx-soft
+# third-party apps, CloudStore/AppCompatFlags/GameConfigStore/MuiCache caches,
+# jumplist/notify-icon UI metadata, RegmagiK, uninstaller entries.
+#
+# Paths normalized: `HKEY_USERS\S-1-...-1000\` written as `HKCU\` since they
+# refer to the same logged-in user's hive.
+
+
+# =============================================================================
+# GROUP A — System-level .torrent association (HKLM, set by Deluge installer)
+# =============================================================================
+# Makes .torrent recognized system-wide and points it at the "Deluge" ProgID.
+
+[HKLM\SOFTWARE\Classes\.torrent]
+@="Deluge"
+
+[HKLM\SOFTWARE\Classes\Deluge]
+@="Deluge"
+
+[HKLM\SOFTWARE\Classes\Deluge\DefaultIcon]
+@="d:\\Program Files\\Deluge\\deluge.exe,0"
+
+[HKLM\SOFTWARE\Classes\Deluge\shell\open\command]
+@="\"d:\\Program Files\\Deluge\\deluge.exe\" \"%1\""
+
+
+# =============================================================================
+# GROUP B — System-level magnet: protocol (HKLM, set by Deluge installer)
+# =============================================================================
+# Magnet protocol handler at system level. Note: Deluge re-uses the bare
+# "Magnet" ProgID rather than defining its own.
+
+[HKLM\SOFTWARE\Classes\Magnet\shell\open\command]
+@="\"d:\\Program Files\\Deluge\\deluge.exe\" \"%1\""
+
+
+# =============================================================================
+# GROUP C — Per-user ProgIDs (HKCU)
+# =============================================================================
+# Deluge defines its OWN per-user ProgIDs ("Deluge.torrent" and "Deluge.magnet")
+# separate from the HKLM ones. These are what the Windows 11 UserChoice (Group E)
+# points to.
+
+[HKCU\Software\Classes\Deluge.torrent]
+[HKCU\Software\Classes\Deluge.torrent\DefaultIcon]
+@="\"D:\\Program Files\\Deluge\\deluge.exe\",1"
+
+[HKCU\Software\Classes\Deluge.torrent\shell\open\command]
+@="\"D:\\Program Files\\Deluge\\deluge.exe\" \"%1\""
+
+[HKCU\Software\Classes\Deluge.magnet]
+[HKCU\Software\Classes\Deluge.magnet\DefaultIcon]
+@="\"D:\\Program Files\\Deluge\\deluge.exe\",0"
+
+[HKCU\Software\Classes\Deluge.magnet\shell\open\command]
+@="\"D:\\Program Files\\Deluge\\deluge.exe\" \"%1\""
+
+
+# =============================================================================
+# GROUP D — RegisteredApplications + Capabilities
+#           (this is what puts Deluge in the Windows 11 "Default Apps" picker)
+# =============================================================================
+# Without these, the app does NOT appear as an option in Settings > Default Apps.
+
+[HKCU\Software\Deluge\Capabilities]
+"ApplicationIcon"="D:\\Program Files\\Deluge\\deluge.exe,1"
+"ApplicationName"="Deluge"
+
+[HKCU\Software\Deluge\Capabilities\FileAssociations]
+".torrent"="Deluge.torrent"
+
+[HKCU\Software\Deluge\Capabilities\URLAssociations]
+"magnet"="Deluge.magnet"
+
+[HKCU\Software\Deluge\shell\open\command]
+@="\"D:\\Program Files\\Deluge\\deluge.exe\""
+
+[HKCU\Software\RegisteredApplications]
+"Deluge"="Software\\Deluge\\Capabilities"
+
+
+# =============================================================================
+# GROUP E — UserChoice (Windows 8/10/11 ACTIVE default)
+# =============================================================================
+# THIS is what actually controls which app launches when a user double-clicks a
+# .torrent or clicks a magnet link. UserChoice OVERRIDES the HKCU\Software\Classes\.torrent
+# and HKCU\Software\Classes\magnet entries.
+#
+# Windows ALSO stores a "Hash" value next to ProgId here — computed from SID +
+# extension + ProgID + timestamp + a Microsoft secret. If we write ProgId
+# without a valid Hash, Windows resets / ignores the UserChoice on next boot.
+# Only the Default Apps UI (or an app using IApplicationAssociationRegistration
+# COM API) can write a valid hash.
+
+[HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\FileExts\.torrent\UserChoice]
+"ProgId"="Deluge.torrent"
+# "Hash"="..."   ← Windows-computed, not shown in original export but exists
+
+[HKCU\Software\Microsoft\Windows\Shell\Associations\UrlAssociations\magnet\UserChoice]
+"ProgId"="Deluge.magnet"
+# "Hash"="..."
+
+[HKCU\Software\Microsoft\Windows\Shell\Associations\UrlAssociations\magnet\UserChoiceLatest]
+"ProgId"="Deluge.magnet"
+
+
+# =============================================================================
+# GROUP F — Supporting entries
+# =============================================================================
+# Less critical but Deluge sets these too.
+
+# "Open with" submenu entry — shows deluge.exe in the right-click "Open with" list
+[HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\FileExts\.torrent\OpenWithList]
+"a"="deluge.exe"
+
+# Suppresses the "an app changed your default" toast — Windows tracks here whether
+# the user has been notified for each (app, extension) pair.
+[HKCU\Software\Microsoft\Windows\CurrentVersion\ApplicationAssociationToasts]
+"Deluge.magnet_magnet"=dword:00000000
+"Deluge_.torrent"=dword:00000000
+"Deluge.torrent_.torrent"=dword:00000000
