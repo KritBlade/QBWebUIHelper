@@ -27,10 +27,15 @@
   <div class="tagline">qBittorrent WebUI Desktop Wrapper</div>
   <hr>
   <div class="grid">
-    <span class="key">Version</span>  <span class="val">1.0.0</span>
+    <span class="key">Version</span>  <span class="val" id="app-version">…</span>
     <span class="key">Author</span>   <span class="val">Kritblade</span>
     <span class="key">License</span>  <span class="val">AGPL-3.0</span>
   </div>
+  <script>
+    window.__TAURI__.core.invoke('cmd_get_version').then(v => {
+      document.getElementById('app-version').textContent = v;
+    });
+  </script>
   <p class="license-note">
     Registers as the default handler for .torrent files and magnet: links on Windows and macOS,
     forwarding them to your qBittorrent WebUI instance.

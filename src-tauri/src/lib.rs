@@ -356,6 +356,11 @@ fn cmd_retry(app: tauri::AppHandle) {
 }
 
 #[tauri::command]
+fn cmd_get_version() -> &'static str {
+    env!("CARGO_PKG_VERSION")
+}
+
+#[tauri::command]
 fn cmd_is_registered() -> bool {
     associations::is_registered()
 }
@@ -541,7 +546,7 @@ pub fn run() {
                 "main",
                 tauri::WebviewUrl::App("index.html".into()),
             )
-            .title("QBWebUIHelper")
+            .title(&format!("QBWebUIHelper {}", env!("CARGO_PKG_VERSION")))
             .inner_size(1600.0, 900.0)
             .initialization_script(helper_js())
             .visible(false);
@@ -637,6 +642,7 @@ pub fn run() {
             cmd_open_default_apps,
             cmd_get_platform,
             cmd_has_mac_backup,
+            cmd_get_version,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
