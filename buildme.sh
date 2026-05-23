@@ -22,4 +22,4 @@ echo "Stamped version $VERSION into tauri.conf.json and Cargo.toml"
 # Without this, cargo's incremental cache keeps the previously embedded icon.
 touch "$ROOT/src-tauri/build.rs"
 
-cargo build --release --manifest-path "$ROOT/src-tauri/Cargo.toml"
+cd "$ROOT" && npx tauri build --bundles app
