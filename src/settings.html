@@ -179,6 +179,7 @@
         el.innerHTML = registered
           ? 'Status: <span class="status-on">Registered</span>'
           : 'Status: <span class="status-off">Not registered</span>';
+        document.getElementById('btn-register').disabled = registered;
       } else if (currentPlatform === 'macos') {
         const el = document.getElementById('reg-status-mac');
         el.innerHTML = registered

@@ -356,6 +356,11 @@ fn cmd_retry(app: tauri::AppHandle) {
 }
 
 #[tauri::command]
+fn cmd_get_version() -> &'static str {
+    env!("CARGO_PKG_VERSION")
+}
+
+#[tauri::command]
 fn cmd_is_registered() -> bool {
     associations::is_registered()
 }
@@ -371,7 +376,9 @@ fn platform_register(app: &tauri::AppHandle) -> Result<(), String> {
     let exe_str = exe.to_str().ok_or("invalid exe path")?;
     let (backup, result) = associations::register(exe_str);
     let mut cfg = config::load(app);
-    cfg.reg_backup = backup;
+    if cfg.reg_backup.is_empty() {
+        cfg.reg_backup = backup;
+    }
     config::save(app, &cfg);
     result
 }
@@ -539,7 +546,7 @@ pub fn run() {
                 "main",
                 tauri::WebviewUrl::App("index.html".into()),
             )
-            .title("QBWebUIHelper")
+            .title(&format!("QBWebUIHelper {}", env!("CARGO_PKG_VERSION")))
             .inner_size(1600.0, 900.0)
             .initialization_script(helper_js())
             .visible(false);
@@ -635,6 +642,7 @@ pub fn run() {
             cmd_open_default_apps,
             cmd_get_platform,
             cmd_has_mac_backup,
+            cmd_get_version,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -38,7 +38,7 @@ pub struct Config {
     pub mac_backup: MacBackup,
 }
 
-fn default_url() -> String { "http://10.0.1.249:9865".to_string() }
+fn default_url() -> String { "http://localhost:8080".to_string() }
 
 impl Default for Config {
     fn default() -> Self {

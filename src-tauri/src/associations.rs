@@ -53,10 +53,15 @@ mod win {
         let hkcu = RegKey::predef(HKEY_CURRENT_USER);
 
         // Phase 1: snapshot previous values (None = key/value did not exist).
+        // Filter out values that already point to our own ProgID or exe so that a
+        // second Register call doesn't overwrite the real previous-handler backup
+        // with a self-reference that would loop back to QBWebUIHelper on unregister.
+        let is_our_value = |v: &str| v.to_ascii_lowercase().contains("qbwebuihelper");
         let backup: Vec<RegMutation> = mutations.iter().map(|(path, name, _)| {
             let prev = hkcu.open_subkey(path)
                 .ok()
-                .and_then(|k| k.get_value::<String, _>(*name).ok());
+                .and_then(|k| k.get_value::<String, _>(*name).ok())
+                .filter(|v| !is_our_value(v));
             RegMutation {
                 path: path.to_string(),
                 name: name.to_string(),

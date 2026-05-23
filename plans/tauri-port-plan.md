@@ -190,7 +190,7 @@ src/
 ```
 ┌─────────────────────────────────┐    ┌──────────────────────┐
 │  Main Window                    │    │  Settings Window     │
-│  webview → http://10.0.1.249    │    │  webview → local     │
+│  webview → http://localhost:8080 │    │  webview → local     │
 │  (qBittorrent WebUI)            │    │  settings.html       │
 └────────────────┬────────────────┘    └──────────┬───────────┘
                  │ Tauri IPC                       │ Tauri IPC
@@ -373,7 +373,7 @@ If `app.deep_link()` fails, check the `tauri-plugin-deep-link` version in `Cargo
 If the deep-link plugin's API is different (e.g. uses `register` instead of `on_open_url`), check the plugin docs for v2 and update the handler in `lib.rs` inside the `#[cfg(target_os = "macos")]` setup block.
 
 **5. Window shows blank / WebUI unreachable**
-The default WebUI URL is `http://10.0.1.249:9865`. On Mac, open Settings and enter the correct URL for the qBittorrent instance you're testing against.
+The default WebUI URL is `http://localhost:8080`. On Mac, open Settings and enter the correct URL for the qBittorrent instance you're testing against.
 
 ### Key architectural facts
 
