@@ -1,5 +1,3 @@
-use crate::config::RegMutation;
-
 // ── Windows ──────────────────────────────────────────────────────────────────
 
 #[cfg(target_os = "windows")]
