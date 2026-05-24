@@ -85,6 +85,10 @@
       <input type="checkbox" id="close-to-tray">
       <label for="close-to-tray">Minimize to tray when closing the window</label>
     </div>
+    <div class="checkbox-row" style="margin-top: 10px;">
+      <input type="checkbox" id="debug-logging">
+      <label for="debug-logging">Verbose debug logging (deep-link / inject diagnostics)</label>
+    </div>
   </div>
 
   <hr>
@@ -198,6 +202,7 @@
       const cfg = await invoke('cmd_get_config');
       document.getElementById('url').value = cfg.webui_url;
       document.getElementById('close-to-tray').checked = cfg.close_to_tray;
+      document.getElementById('debug-logging').checked = cfg.debug_logging;
 
       currentPlatform = await invoke('cmd_get_platform');
       if (currentPlatform === 'windows') {
@@ -229,6 +234,11 @@
     // ── Close-to-tray ──────────────────────────────────────────────
     document.getElementById('close-to-tray').addEventListener('change', async e => {
       await invoke('cmd_set_close_to_tray', { enabled: e.target.checked });
+    });
+
+    // ── Debug logging ──────────────────────────────────────────────
+    document.getElementById('debug-logging').addEventListener('change', async e => {
+      await invoke('cmd_set_debug_logging', { enabled: e.target.checked });
     });
 
     // ── Windows modals ─────────────────────────────────────────────

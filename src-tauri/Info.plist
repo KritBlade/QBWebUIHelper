@@ -32,6 +32,23 @@
     </dict>
   </array>
 
+  <!-- Declare magnet: URL scheme so macOS delivers magnet links to us at
+       cold start. Without this, LSSetDefaultHandlerForURLScheme can succeed
+       but macOS won't actually relay the URL on first launch. -->
+  <key>CFBundleURLTypes</key>
+  <array>
+    <dict>
+      <key>CFBundleURLName</key>
+      <string>Magnet Link</string>
+      <key>CFBundleURLSchemes</key>
+      <array>
+        <string>magnet</string>
+      </array>
+      <key>CFBundleTypeRole</key>
+      <string>Viewer</string>
+    </dict>
+  </array>
+
   <!-- Override CFBundleDocumentTypes to include LSItemContentTypes (UTI).
        LSSetDefaultRoleHandlerForContentType checks this to accept the claim. -->
   <key>CFBundleDocumentTypes</key>

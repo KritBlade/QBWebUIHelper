@@ -317,3 +317,153 @@ On macOS, `WebviewWindowBuilder::menu()` does NOT replace the system app menu. U
 ### macOS association confirmation dialog
 
 When `LSSetDefaultRoleHandlerForContentType` is called and another app currently owns the type, macOS shows a system dialog asynchronously (e.g. "Do you want .torrent to open with QBWebUIHelper or keep using Free Download Manager?"). The LS call returns success **before** the user dismisses the dialog. Poll `cmd_is_registered` after calling `cmd_register` rather than checking status immediately — the settings UI does this with `pollUntilRegistered(15)` in `settings.html`.
+
+---
+
+## 10. Magnet / .torrent Delivery — Cold Start vs. Warm Start
+
+Receiving a magnet click or `.torrent` double-click is two different code paths depending on whether QBWebUIHelper is already running. Both end up calling `dispatch_url()` → `build_action()` (which mints a fresh `PendingAction.id` from `ACTION_COUNTER`) → `inject_with_retries`. Below is what's actually different — and the non-obvious traps.
+
+### Two delivery paths into JS
+
+Once `dispatch_url` has an action, it tries to land it on the qBittorrent WebUI page two different ways. These run in parallel and are de-duplicated **inside JS** by `action.id` (`__qbHelper_lastId === action.id` ⇒ skip on this page).
+
+| Path | Trigger | Where it works |
+|---|---|---|
+| **A. Direct injection** — Rust calls `window.eval("__qbHelper_handle(json)")` at `+0ms / +500ms / +2s / +5.5s` | `inject_with_retries` spawned thread | Warm start: the very first injection lands on the WebUI. Cold start: the first injection often lands on `tauri://localhost` (loading screen) and silently no-ops via the `typeof === 'function'` guard. Later retries land on the WebUI after `connect_flow` navigates. |
+| **B. JS polling** — init script's `__qbCheckPending` polls every 300ms (60 attempts = 18s budget) until `window.qBittorrent.Client` exists, then calls `cmd_get_pending_action` to drain `PENDING_ACTION` | runs on every page load (init script) | Backup safety net for when the WebUI takes longer than `inject_with_retries`'s 5.5s budget to load. Driven by the page itself signalling readiness, so it can't lose the race. |
+
+Both A and B coexist because each fails in cases the other handles. Don't remove either.
+
+The JS retry loop that waits for `window.qBittorrent.Client` is factored into one helper, `__qbWaitForClient(label, cb)`, used by both the magnet and `.torrent` branches of `__qbHelper_handle`. The only difference between the two branches is the actual qBittorrent API call (`createAddTorrentWindow` vs `uploadTorrentFiles`).
+
+### Warm start (app already open)
+
+User clicks magnet / double-clicks `.torrent` → macOS posts `application:openURLs:` → `tauri-plugin-deep-link` fires `on_open_url` → `dispatch_url` → `inject_with_retries`. The WebUI is already loaded, so the very first injection at `+0ms` hits a page where `__qbHelper_handle` and `window.qBittorrent.Client` both exist. Dialog opens in well under a second. Subsequent retries see `__qbHelper_lastId === action.id` and skip.
+
+### Cold start (app not running)
+
+User clicks magnet → macOS launches our app → `setup` runs → window builds → `connect_flow` navigates to the qBittorrent WebUI. Meanwhile the launch URL arrives via **one of two** channels — we have to listen on both:
+
+#### `on_open_url` does NOT fire reliably for cold-start URLs on macOS
+
+Per `tauri-plugin-deep-link` source, the launch URL is captured by an internal `on_event` handler that stores it in a `Mutex`. Whether the registered `on_open_url` callback also fires for the launch URL is timing-dependent. In testing we sometimes see the callback fire, sometimes not. **You cannot rely on it.**
+
+#### `get_current()` is the explicit retrieval API
+
+The plugin exposes `app.deep_link().get_current() -> Result<Option<Vec<Url>>>` which returns the cached URL once the launch event has been processed. The cache may not be populated immediately when `setup` runs, so we poll at 100ms, 400ms, 1.1s, 2.6s, 5.6s (cumulative) until it returns Some.
+
+### Dedup is *structural*, not *temporal*
+
+Because both `on_open_url` and `get_current()` may deliver the same launch URL, we need to dedupe — but using a time window catches legitimate repeat-clicks ("user double-clicked the same `.torrent` again") as well as structural duplicates, which silently drops user actions.
+
+The structural insight: **the only scenario where two paths deliver the same URL is during the `get_current()` polling thread's lifetime.** Once that thread exits (either it found the URL and broke, or it timed out after 5.6s), only `on_open_url` can fire — so every URL after that is a new user action that must NOT be deduped.
+
+Implementation: an `AtomicBool` flipped by the polling thread when its loop ends.
+
+```rust
+static COLDSTART_URLS: Mutex<Vec<String>> = Mutex::new(Vec::new());
+static COLDSTART_DONE: AtomicBool = AtomicBool::new(false);
+
+fn dispatch_url(app_handle: &AppHandle, dl_url: &str) {
+    if !COLDSTART_DONE.load(Ordering::Relaxed) {
+        let mut seen = COLDSTART_URLS.lock().unwrap();
+        if seen.iter().any(|u| u == dl_url) {
+            log(&format!("deep-link (cold-start dup, skipped): {}", dl_url));
+            return;
+        }
+        seen.push(dl_url.to_string());
+    }
+    // ... build action, inject ...
+}
+
+// Cold-start polling thread:
+std::thread::spawn(move || {
+    for &delay_ms in &[100u64, 300, 700, 1500, 3000] {
+        sleep(Duration::from_millis(delay_ms));
+        if let Ok(Some(urls)) = app_handle.deep_link().get_current() {
+            for url in urls { dispatch_url(&app_handle, url.as_str()); }
+            break;
+        }
+    }
+    COLDSTART_DONE.store(true, Ordering::Relaxed);  // <-- closes the dedup window
+});
+
+// Runtime handler — always dispatches, dedup is gated on COLDSTART_DONE.
+app.deep_link().on_open_url(move |event| {
+    for url in event.urls() { dispatch_url(&app_handle, url.as_str()); }
+});
+```
+
+In practice the polling thread `break`s on the very first poll (the URL is usually cached by +100ms), so the dedup window is open for **~100ms**, not the full 5.6s. The only theoretical scenario where it could matter: a user physically clicks a `.torrent` within 100ms of macOS launching the binary, with the same URL — physically impossible.
+
+#### Why the previous time-windowed designs failed
+
+We tried two earlier approaches before landing on the AtomicBool gate:
+
+| Attempt | Failure mode |
+|---|---|
+| 10-second URL dedup window | Repeat-clicking the same `.torrent` 5–8 seconds apart got silently dropped — caught by the dedup window. |
+| 1.5-second URL dedup window | Better, but still arbitrary: a user clicking same `.torrent` twice quickly during testing got dropped, and the *edge case where `get_current()` returns Some only at +5.6s on its last poll* would slip past the window and double-dispatch. |
+
+The structural approach has no time knob to get wrong: dedup is active for exactly the lifetime of the cold-start polling thread, which is bounded by macOS's own behaviour.
+
+### Trap: `CFBundleURLTypes` is required in Info.plist
+
+`tauri.conf.json` has `"plugins": { "deep-link": { "schemes": ["magnet"] } }`, but Tauri does NOT merge that into a *custom* `Info.plist` (we use one to add `UTImportedTypeDeclarations` etc. — see §9). If `CFBundleURLTypes` is missing, **macOS will not launch our app for magnet links at all** — the click is silently routed to whatever Launch Services thinks is the handler. Add explicitly:
+
+```xml
+<key>CFBundleURLTypes</key>
+<array>
+  <dict>
+    <key>CFBundleURLName</key>
+    <string>Magnet Link</string>
+    <key>CFBundleURLSchemes</key>
+    <array><string>magnet</string></array>
+    <key>CFBundleTypeRole</key>
+    <string>Viewer</string>
+  </dict>
+</array>
+```
+
+Symptom when missing: app launches (Launch Services still routes via the URL handler registration we did with `LSSetDefaultHandlerForURLScheme`), but `on_open_url` never fires and `get_current()` always returns None. The log shows `--- app start ---` and nothing else.
+
+### Trap: deep-link can arrive *before* the main window is built
+
+On cold start, the file:// URL for a `.torrent` double-click is sometimes delivered (via `get_current()`'s first poll at +100ms) **before** `setup` has built the main `WebviewWindow`. `dispatch_url` calls `app.get_webview_window("main")` and gets `None`. Without a window, `inject_with_retries` can't fire and the action would be lost.
+
+Fix: `dispatch_url` always stores the action in `PENDING_ACTION` before attempting injection. After `win.show()` in `setup`, we drain it:
+
+```rust
+win.show()?;
+
+// If a deep-link arrived before the main window existed (common for .torrent
+// file:// URLs — they're delivered very early in the launch sequence),
+// dispatch_url stored the action but couldn't start inject_with_retries. Drain it now.
+if let Some(action) = PENDING_ACTION.lock().ok().and_then(|g| g.clone()) {
+    inject_with_retries(win.clone(), action);
+}
+```
+
+This is why the log shows `dispatch_url: main window not found yet` followed by `drain early pending action id=... type=torrent` on cold-start `.torrent` opens.
+
+### Trap: `window.__TAURI__` is not present immediately on external origins
+
+The initialization script runs at *document-start* on every page load — including the qBittorrent WebUI. But Tauri's `window.__TAURI__` global is injected *separately* and is **not synchronously available** when the init script runs on an external HTTP origin. Consequences:
+
+- `__qbLog(msg)` calls made synchronously from the init script on the WebUI page may silently no-op (the `if (window.__TAURI__)` guard).
+- `cmd_get_pending_action` calls inside the `__qbCheckPending` retry loop work fine because they happen later (async, after qBittorrent's own JS has loaded, by which point `__TAURI__` is up).
+
+This is why you'll see `helper_js loaded on tauri://localhost` in the log but not always `helper_js loaded on http://<qb-server>` — the function works on the WebUI page, but the *log line itself* gets dropped because `__TAURI__` wasn't ready yet. Don't conclude from the missing log that the init script didn't run.
+
+### Trap: per-page JS state is reset on navigation
+
+`__qbHelper_lastId` is a JS variable on `window` — it lives only for the current page. When the cold-start direct injection at +0ms lands on `tauri://localhost`, it sets `__qbHelper_lastId = action.id` *on that page*. Navigation to the WebUI then destroys that page's JS context. The new WebUI page starts with `__qbHelper_lastId` undefined, so the next injection (at +500ms) correctly processes the action. This is by design — DO NOT try to persist the dedup flag across pages, or cold-start will break.
+
+### Action ID counter
+
+`PendingAction.id` comes from a monotonic `AtomicU64` (`ACTION_COUNTER`). The counter resets to 0 on every process start, which is fine — IDs only need to be unique within a session. The Rust-side `COLDSTART_URLS` set handles structural URL-string dedup during the cold-start window; `__qbHelper_lastId` handles per-page injection dedup at runtime.
+
+### Debug Logging toggle
+
+Verbose diagnostics (`inject_action: id=... into <url>`, `[JS] addMagnet ...`, `cmd_get_pending_action → ...`) are gated behind `Settings → Behaviour → Verbose debug logging`. The toggle is stored in `config.json` under `debug_logging` and read at startup into `DEBUG_LOG` (an `AtomicBool`). High-signal entries (`--- app start ---`, `deep-link: <url>`, `deep-link (cold-start dup, skipped)`, errors) remain unconditional. Turn debug on when troubleshooting an unopened magnet/torrent, off in normal use to keep `log.txt` small.

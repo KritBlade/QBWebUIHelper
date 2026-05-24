@@ -30,6 +30,10 @@ pub struct Config {
     pub webui_url: String,
     #[serde(default)]
     pub close_to_tray: bool,
+    /// When true, verbose deep-link / inject diagnostics are written to log.txt.
+    /// Off by default so the log stays small in steady-state use.
+    #[serde(default)]
+    pub debug_logging: bool,
     /// Windows registry backup (populated only on Windows after Register).
     #[serde(default)]
     pub reg_backup: Vec<RegMutation>,
@@ -45,6 +49,7 @@ impl Default for Config {
         Config {
             webui_url: default_url(),
             close_to_tray: false,
+            debug_logging: false,
             reg_backup: Vec::new(),
             mac_backup: MacBackup::default(),
         }
