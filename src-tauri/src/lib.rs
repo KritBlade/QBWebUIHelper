@@ -160,9 +160,12 @@ fn inject_with_retries(win: tauri::WebviewWindow, action: PendingAction) {
 /// polling thread has finished, only on_open_url can fire, so every URL after
 /// that is a new user action and must NOT be deduped (otherwise repeat-clicks
 /// of the same .torrent/magnet are silently dropped).
+#[cfg(target_os = "macos")]
 static COLDSTART_URLS: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(Vec::new());
+#[cfg(target_os = "macos")]
 static COLDSTART_DONE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
+#[cfg(target_os = "macos")]
 fn dispatch_url(app_handle: &tauri::AppHandle, dl_url: &str) {
     if !COLDSTART_DONE.load(std::sync::atomic::Ordering::Relaxed) {
         let mut seen = COLDSTART_URLS.lock().unwrap();

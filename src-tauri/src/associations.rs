@@ -2,7 +2,7 @@
 
 #[cfg(target_os = "windows")]
 mod win {
-    use super::RegMutation;
+    use crate::config::RegMutation;
     use winreg::enums::*;
     use winreg::RegKey;
 
