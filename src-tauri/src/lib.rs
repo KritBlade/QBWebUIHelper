@@ -734,6 +734,9 @@ pub fn run() {
                 } else {
                     connect_flow(&win_clone, &url, None);
                     if let Some(action) = startup_action {
+                        if let Ok(mut g) = PENDING_ACTION.lock() {
+                            *g = Some(action.clone());
+                        }
                         inject_with_retries(win_clone, action);
                     }
                 }

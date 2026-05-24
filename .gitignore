@@ -5,8 +5,7 @@ src-tauri/target/
 # Node / Tauri CLI
 node_modules/
 
-# Runtime files
-log.txt
+
 
 # OS
 .DS_Store

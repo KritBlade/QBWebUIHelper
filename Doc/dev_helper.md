@@ -212,6 +212,42 @@ Then a final sweep walks the subkeys we may have created (deepest first) and tri
 
 `SHChangeNotify(SHCNE_ASSOCCHANGED)` fires at the end of both Register and Unregister so the shell picks up changes without a reboot.
 
+### Two guards that keep the backup faithful across repeat Register calls
+
+Both guards exist because a user clicking Register twice (or running it after a partial cycle) would otherwise corrupt the saved backup and break Unregister forever.
+
+**1. Self-reference filter during snapshot** (`associations.rs::win::register`)
+
+When capturing the previous value for each registry slot, skip any value that already references us:
+
+```rust
+let is_our_value = |v: &str| v.to_ascii_lowercase().contains("qbwebuihelper");
+let backup: Vec<RegMutation> = mutations.iter().map(|(path, name, _)| {
+    let prev = hkcu.open_subkey(path)
+        .ok()
+        .and_then(|k| k.get_value::<String, _>(*name).ok())
+        .filter(|v| !is_our_value(v));  // ← drop self-references
+    RegMutation { path: ..., name: ..., prev }
+}).collect();
+```
+
+Without this, an interrupted Register/Unregister cycle (or simply hitting Register twice) would snapshot leftover `QBWebUIHelper.Torrent` values as the "previous handler", and Unregister would faithfully restore those — pointing the user's registry back at us. They'd never be free of QBWebUIHelper.
+
+**2. Backup overwrite guard at the caller** (`platform_register` in `lib.rs`)
+
+```rust
+let (backup, result) = associations::register(exe_str);
+let mut cfg = config::load(app);
+if cfg.reg_backup.is_empty() {     // ← only persist the FIRST backup
+    cfg.reg_backup = backup;
+}
+config::save(app, &cfg);
+```
+
+The snapshot is taken **after** any prior Register has already mutated the registry, so a fresh snapshot on the second call captures *our own* writes (modulo the self-reference filter, which catches most but not all slots — e.g. `RegisteredApplications` value is `Software\QBWebUIHelper\Capabilities`, which matches the filter, but defence in depth matters). The caller-side guard ensures the very first backup — taken when the registry still held the user's real handler — is the one that survives.
+
+The same pattern exists on macOS as `if !cfg.mac_backup.has_any()` in the macOS branch of `platform_register`.
+
 ### Failure handling
 
 If a registry write fails mid-Register, the backup log is still persisted to `config.json` first (`cmd_register` saves backup before returning the error). Clicking Unregister then cleans up any partial writes.
@@ -341,7 +377,50 @@ The JS retry loop that waits for `window.qBittorrent.Client` is factored into on
 
 User clicks magnet / double-clicks `.torrent` → macOS posts `application:openURLs:` → `tauri-plugin-deep-link` fires `on_open_url` → `dispatch_url` → `inject_with_retries`. The WebUI is already loaded, so the very first injection at `+0ms` hits a page where `__qbHelper_handle` and `window.qBittorrent.Client` both exist. Dialog opens in well under a second. Subsequent retries see `__qbHelper_lastId === action.id` and skip.
 
-### Cold start (app not running)
+### Cold start — Windows
+
+Windows uses a completely different mechanism than macOS:
+
+- The shell launches us with `"<exe>" "<url-or-path>"` (the `%1` in our registered `shell\open\command`).
+- `std::env::args().nth(1)` in `setup()` captures the argument, `build_action` parses it, and the result is stored in a local `startup_action: Option<PendingAction>`.
+- The setup thread runs `connect_flow` first, then if `startup_action` is Some, stores it to `PENDING_ACTION` *and* calls `inject_with_retries`.
+
+```rust
+let startup_action = std::env::args().nth(1).as_deref().and_then(build_action);
+// ...
+std::thread::spawn(move || {
+    connect_flow(&win_clone, &url, None);
+    if let Some(action) = startup_action {
+        if let Ok(mut g) = PENDING_ACTION.lock() {
+            *g = Some(action.clone());  // backup-delivery via __qbCheckPending
+        }
+        inject_with_retries(win_clone, action);  // direct delivery
+    }
+});
+```
+
+Storing to `PENDING_ACTION` before injecting gives us the same dual-delivery pattern as macOS (Path A direct + Path B JS polling). Without it, if the WebUI takes longer than `inject_with_retries`'s 5.5s retry budget to load, the action is lost.
+
+**Second-instance forwarding** uses `tauri-plugin-single-instance`. When the user double-clicks another `.torrent` while QBWebUIHelper is already running, Windows launches a new process, which the plugin detects, kills, and forwards its CLI args to the running instance's callback:
+
+```rust
+.plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
+    if let Some(w) = app.get_webview_window("main") {
+        let _ = w.unminimize(); let _ = w.show(); let _ = w.set_focus();
+        if let Some(arg) = args.get(1) {
+            if let Some(action) = build_action(arg) {
+                inject_with_retries(w, action);  // warm path — WebUI already loaded
+            }
+        }
+    }
+}))
+```
+
+The warm second-instance path skips `PENDING_ACTION` because the WebUI is already loaded — direct inject lands on the first try.
+
+**Why Windows doesn't need `COLDSTART_URLS` / `COLDSTART_DONE` dedup:** there is only one delivery channel on Windows (CLI args parsed once in `setup`). macOS needs the dedup because `on_open_url` and `get_current()` can both fire for the same launch URL. Windows has no equivalent dual source.
+
+### Cold start — macOS
 
 User clicks magnet → macOS launches our app → `setup` runs → window builds → `connect_flow` navigates to the qBittorrent WebUI. Meanwhile the launch URL arrives via **one of two** channels — we have to listen on both:
 
@@ -447,6 +526,12 @@ if let Some(action) = PENDING_ACTION.lock().ok().and_then(|g| g.clone()) {
 
 This is why the log shows `dispatch_url: main window not found yet` followed by `drain early pending action id=... type=torrent` on cold-start `.torrent` opens.
 
+`PENDING_ACTION` is the shared cross-platform backbone of dual-delivery:
+- **macOS**: filled by `dispatch_url` (handling early pre-window arrival), drained by `win.show()` callback *and* by JS `__qbCheckPending`.
+- **Windows**: filled by the setup thread from `startup_action`, drained by JS `__qbCheckPending`. The pre-window drain isn't needed (CLI args arrive synchronously inside `setup`, so the window always exists by the time the action is built).
+
+The mutex is one slot deep. `cmd_get_pending_action` `take()`s it, so whichever path runs second sees `None` and no-ops — JS-side dedup by `__qbHelper_lastId` is the second line of defence if both paths somehow deliver before the take.
+
 ### Trap: `window.__TAURI__` is not present immediately on external origins
 
 The initialization script runs at *document-start* on every page load — including the qBittorrent WebUI. But Tauri's `window.__TAURI__` global is injected *separately* and is **not synchronously available** when the init script runs on an external HTTP origin. Consequences:
@@ -467,3 +552,63 @@ This is why you'll see `helper_js loaded on tauri://localhost` in the log but no
 ### Debug Logging toggle
 
 Verbose diagnostics (`inject_action: id=... into <url>`, `[JS] addMagnet ...`, `cmd_get_pending_action → ...`) are gated behind `Settings → Behaviour → Verbose debug logging`. The toggle is stored in `config.json` under `debug_logging` and read at startup into `DEBUG_LOG` (an `AtomicBool`). High-signal entries (`--- app start ---`, `deep-link: <url>`, `deep-link (cold-start dup, skipped)`, errors) remain unconditional. Turn debug on when troubleshooting an unopened magnet/torrent, off in normal use to keep `log.txt` small.
+
+---
+
+## 11. Centralized Version Stamping
+
+One file at the repo root — `VERSION` — drives every place the version number is shown to the user. Bump that file, run the build script for your platform, and the version flows automatically through all four surfaces.
+
+### Surfaces fed from `VERSION`
+
+| Where | How it arrives | Mechanism |
+|---|---|---|
+| Window title bar (`QBWebUIHelper 1.1.0`) | Compile-time | `env!("CARGO_PKG_VERSION")` in `lib.rs` reads from `Cargo.toml` |
+| About page (`Version` row) | Runtime | `cmd_get_version` returns `env!("CARGO_PKG_VERSION")`, About page invokes it |
+| Windows file properties (FileVersion / ProductVersion) | Compile-time | `tauri-build` writes Cargo's `[package].version` into the exe's resource block |
+| macOS Get Info / Info.plist (`CFBundleShortVersionString`) | Bundle-time | `tauri build` reads `tauri.conf.json` "version" |
+
+### The stamping flow
+
+```
+                    VERSION (1.1.0)
+                       │
+        ┌──────────────┴──────────────┐
+        ▼                             ▼
+   buildme.bat                   buildme.sh
+        │                             │
+        ▼                             ▼
+   scripts\stamp.ps1            sed + awk inline
+        │                             │
+        └──────────────┬──────────────┘
+                       ▼
+        ┌─────────────────────────────┐
+        │  src-tauri\Cargo.toml       │  (first [package] version line)
+        │  src-tauri\tauri.conf.json  │  ("version" field)
+        └─────────────────────────────┘
+                       │
+                       ▼
+                  cargo build
+        / npx tauri build --bundles app,dmg
+```
+
+### Bumping the version
+
+1. Edit `VERSION` — single line, e.g. `1.2.0`.
+2. Run `buildme.bat` (Windows) or `buildme.sh` (macOS). The script:
+   - Reads `VERSION`
+   - Rewrites `tauri.conf.json` "version" and the **first** `^version = "..."` line in `Cargo.toml`
+   - Touches `build.rs` to bust the cargo cache (so icon re-embedding works too — see §8)
+   - Builds
+
+### Why "first matching version line" in `Cargo.toml`
+
+The `[package]` `version = "..."` line is structurally identical to dependency version specs (`some-crate = { version = "1.0" }`). Both `stamp.ps1` and `buildme.sh` use a `done` flag and exit after the first match. The `[package]` section is conventionally first in any Cargo.toml, so this is safe — but moving the package metadata below dependencies would silently break the stamp. If the file structure ever changes, switch to TOML-aware tooling.
+
+### Why two scripts instead of one
+
+Cross-platform shell parity is a tar pit. `stamp.ps1` is invoked via `-File` (not `-Command`) from `buildme.bat` to sidestep PowerShell's quoting madness when called from cmd. macOS uses BSD `sed -i ''` and `awk` because `sed -i` syntax differs between BSD and GNU, and a shell script with `if [[ "$OSTYPE" ... ]]` branches would be the worst of both worlds.
+
+### Single source of truth — don't edit downstream files by hand
+
+Never edit `Cargo.toml` or `tauri.conf.json` version fields directly. They'll get overwritten on the next build. The git history should show `VERSION` changes followed by build artifacts — anything else means someone bypassed the system.
