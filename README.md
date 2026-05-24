@@ -1,5 +1,10 @@
 # QBWebUIHelper
 
+<img width="600"   alt="image" src="https://github.com/user-attachments/assets/fa30f1c0-95a7-4fb3-98e5-7e04b115b192" />
+<img width="600"  alt="image" src="https://github.com/user-attachments/assets/71a0ba0c-cd25-4075-96db-666aef4ae43e" />
+
+
+
 If you run qBittorrent as a headless server and access it through its web interface, you've probably hit this annoyance: clicking a magnet link in your browser does nothing useful, or double-clicking a `.torrent` file opens the wrong app (or a dialog asking you to pick one). qBittorrent's built-in browser extension workaround exists, but it's fiddly to set up and doesn't always stick.
 
 I personally need a tool for myself to fix this properly.
